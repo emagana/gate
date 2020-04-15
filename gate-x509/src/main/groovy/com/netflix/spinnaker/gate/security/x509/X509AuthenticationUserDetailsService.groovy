@@ -23,8 +23,10 @@ import com.netflix.spectator.api.Registry
 import com.netflix.spinnaker.fiat.model.UserPermission
 import com.netflix.spinnaker.fiat.shared.FiatClientConfigurationProperties
 import com.netflix.spinnaker.fiat.shared.FiatPermissionEvaluator
+import com.netflix.spinnaker.fiat.shared.FiatStatus
 import com.netflix.spinnaker.gate.security.AllowedAccountsSupport
 import com.netflix.spinnaker.gate.services.PermissionService
+import com.netflix.spinnaker.kork.core.RetrySupport
 import com.netflix.spinnaker.kork.dynamicconfig.DynamicConfigService
 import com.netflix.spinnaker.security.AuthenticatedRequest
 import com.netflix.spinnaker.security.User
@@ -78,7 +80,12 @@ class X509AuthenticationUserDetailsService implements AuthenticationUserDetailsS
   FiatClientConfigurationProperties fiatClientConfigurationProperties
 
   @Autowired
+  FiatStatus fiatStatus
+
+  @Autowired
   Registry registry
+
+  RetrySupport retrySupport = new RetrySupport()
 
   @Value('${x509.required-roles:}#{T(java.util.Collections).emptyList()}')
   List<String> requiredRoles = []
@@ -167,13 +174,15 @@ class X509AuthenticationUserDetailsService implements AuthenticationUserDetailsS
           .withTag("type", "x509")
 
         try {
-          if (rolesExtractor) {
-            permissionService.loginWithRoles(email, roles)
-            log.debug("Successful X509 authentication (user: {}, roleCount: {}, roles: {})", email, roles.size(), roles)
-          } else {
-            permissionService.login(email)
-            log.debug("Successful X509 authentication (user: {})", email)
-          }
+          retrySupport.retry({ ->
+            if (rolesExtractor) {
+              permissionService.loginWithRoles(email, roles)
+              log.debug("Successful X509 authentication (user: {}, roleCount: {}, roles: {})", email, roles.size(), roles)
+            } else {
+              permissionService.login(email)
+              log.debug("Successful X509 authentication (user: {})", email)
+            }
+          }, 5, Duration.ofSeconds(2), false)
 
           id = id.withTag("success", true).withTag("fallback", "none")
         } catch (Exception e) {
@@ -198,11 +207,13 @@ class X509AuthenticationUserDetailsService implements AuthenticationUserDetailsS
         }
       }
 
-      def permission = fiatPermissionEvaluator.getPermission(email)
-      def roleNames = permission?.getRoles()?.collect { it -> it.getName() }
-      log.debug("Extracted roles from fiat permissions for user {}: {}", email, roleNames)
-      if (roleNames) {
-        roles.addAll(roleNames)
+      if (fiatStatus.isEnabled()) {
+        def permission = fiatPermissionEvaluator.getPermission(email)
+        def roleNames = permission?.getRoles()?.collect { it -> it.getName() }
+        log.debug("Extracted roles from fiat permissions for user {}: {}", email, roleNames)
+        if (roleNames) {
+          roles.addAll(roleNames)
+        }
       }
 
       return roles.unique(/* mutate = */false)

@@ -59,18 +59,21 @@ public class ArtifactService {
     return HystrixFactory.newVoidCommand(GROUP, type, work);
   }
 
+  private static HystrixCommand<Map<String, Object>> mapCommand(
+      String type, Callable<Map<String, Object>> work) {
+    return HystrixFactory.newMapCommand(GROUP, type, work);
+  }
+
   public List<Map> getArtifactCredentials(String selectorKey) {
     return mapListCommand(
-            "artifactCredentials",
-            clouddriverServiceSelector.select(selectorKey)::getArtifactCredentials)
+            "artifactCredentials", clouddriverServiceSelector.select()::getArtifactCredentials)
         .execute();
   }
 
   public List<String> getArtifactNames(String selectorKey, String accountName, String type) {
     return stringListCommand(
             "artifactNames",
-            () ->
-                clouddriverServiceSelector.select(selectorKey).getArtifactNames(accountName, type))
+            () -> clouddriverServiceSelector.select().getArtifactNames(accountName, type))
         .execute();
   }
 
@@ -80,7 +83,7 @@ public class ArtifactService {
             "artifactVersions",
             () ->
                 clouddriverServiceSelector
-                    .select(selectorKey)
+                    .select()
                     .getArtifactVersions(accountName, type, artifactName))
         .execute();
   }
@@ -91,7 +94,7 @@ public class ArtifactService {
             "artifactContents",
             () -> {
               Response contentResponse =
-                  clouddriverServiceSelector.select(selectorKey).getArtifactContent(artifact);
+                  clouddriverServiceSelector.select().getArtifactContent(artifact);
               IOUtils.copy(contentResponse.getBody().in(), outputStream);
               return null;
             })
@@ -108,6 +111,19 @@ public class ArtifactService {
     return stringListCommand(
             "artifactVersionsByProvider",
             () -> igorService.get().getArtifactVersions(provider, packageName, releaseStatus))
+        .execute();
+  }
+
+  public Map<String, Object> getArtifactByVersion(
+      String provider, String packageName, String version) {
+    if (!igorService.isPresent()) {
+      throw new IllegalStateException(
+          "Cannot fetch artifact versions because Igor is not enabled.");
+    }
+
+    return mapCommand(
+            "artifactFromVersion",
+            () -> igorService.get().getArtifactByVersion(provider, packageName, version))
         .execute();
   }
 }

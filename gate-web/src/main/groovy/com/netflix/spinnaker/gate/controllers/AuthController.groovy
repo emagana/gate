@@ -22,7 +22,7 @@ import com.netflix.spinnaker.security.AuthenticatedRequest
 import com.netflix.spinnaker.security.User
 import groovy.util.logging.Slf4j
 import io.swagger.annotations.ApiOperation
-import org.apache.commons.lang.exception.ExceptionUtils
+import org.apache.commons.lang3.exception.ExceptionUtils
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.access.prepost.PreAuthorize
@@ -84,14 +84,26 @@ class AuthController {
 
   @ApiOperation(value = "Get service accounts", response = List.class)
   @RequestMapping(value = "/user/serviceAccounts", method = RequestMethod.GET)
-  List<String> getServiceAccounts(@ApiIgnore @SpinnakerUser User user) {
-    permissionService.getServiceAccounts(user)
+  List<String> getServiceAccounts(@ApiIgnore @SpinnakerUser User user,
+                                  @RequestParam(name = "application", required = false) String application) {
+
+    String appName = Optional.ofNullable(application)
+      .map({ s -> s.trim() })
+      .filter({ s -> !s.isEmpty()})
+      .orElse(null);
+
+
+    if (appName == null) {
+      return permissionService.getServiceAccounts(user)
+    }
+
+    return permissionService.getServiceAccountsForApplication(user, appName)
   }
 
   @ApiOperation(value = "Get logged out message", response = String.class)
   @RequestMapping(value = "/loggedOut", method = RequestMethod.GET)
   String loggedOut() {
-    return LOGOUT_MESSAGES[r.nextInt(LOGOUT_MESSAGES.size()+1)]
+    return LOGOUT_MESSAGES[r.nextInt(LOGOUT_MESSAGES.size())]
   }
 
   /**

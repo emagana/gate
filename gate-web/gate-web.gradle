@@ -18,13 +18,16 @@ repositories {
 }
 
 dependencies {
+  implementation project(":gate-api")
   implementation project(":gate-core")
   implementation project(":gate-proxy")
+  implementation project(":gate-plugins")
   implementation project(":gate-integrations-gremlin")
 
   implementation "com.squareup.retrofit:retrofit"
   implementation "com.squareup.retrofit:converter-jackson"
   implementation "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml"
+  implementation "com.fasterxml.jackson.datatype:jackson-datatype-jsr310"
 
   implementation "com.squareup.okhttp:okhttp"
   implementation "com.squareup.okhttp:okhttp-urlconnection"
@@ -33,12 +36,13 @@ dependencies {
   implementation "com.netflix.spinnaker.fiat:fiat-core:$fiatVersion"
   implementation "com.netflix.spinnaker.fiat:fiat-api:$fiatVersion"
 
+  implementation "com.netflix.spinnaker.kork:kork-core"
+  implementation "com.netflix.spinnaker.kork:kork-plugins"
+  implementation "com.netflix.spinnaker.kork:kork-secrets-aws"
+  implementation "com.netflix.spinnaker.kork:kork-secrets-gcp"
   implementation "com.netflix.spinnaker.kork:kork-stackdriver"
   implementation "com.netflix.spinnaker.kork:kork-swagger"
   implementation "com.netflix.spinnaker.kork:kork-web"
-  implementation "com.netflix.spinnaker.kork:kork-secrets-aws"
-  implementation "com.netflix.spinnaker.kork:kork-core"
-  implementation "com.netflix.spinnaker.kork:kork-manageddelivery"
   implementation "com.netflix.frigga:frigga"
   implementation "redis.clients:jedis"
   implementation "com.netflix.hystrix:hystrix-core"
@@ -46,6 +50,8 @@ dependencies {
   implementation 'commons-io:commons-io'
   implementation 'org.springframework.session:spring-session-data-redis'
   implementation "de.huxhorn.sulky:de.huxhorn.sulky.ulid"
+  implementation "com.jakewharton.retrofit:retrofit1-okhttp3-client:1.1.0"
+  implementation "org.apache.commons:commons-lang3"
 
   implementation "org.springframework:spring-web"
 
@@ -56,6 +62,7 @@ dependencies {
   testImplementation "com.squareup.retrofit:retrofit-mock"
   testImplementation "org.springframework.security:spring-security-test"
   testImplementation "org.springframework.security:spring-security-ldap"
+  testImplementation "org.springframework.security:spring-security-oauth2-jose"
   testImplementation "com.unboundid:unboundid-ldapsdk"
   testImplementation "com.netflix.spinnaker.kork:kork-jedis-test"
 

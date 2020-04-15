@@ -17,15 +17,7 @@
 package com.netflix.spinnaker.gate.services.internal
 
 import retrofit.client.Response
-import retrofit.http.Body
-import retrofit.http.DELETE
-import retrofit.http.GET
-import retrofit.http.Headers
-import retrofit.http.PATCH
-import retrofit.http.POST
-import retrofit.http.PUT
-import retrofit.http.Path
-import retrofit.http.Query
+import retrofit.http.*
 
 interface OrcaService {
 
@@ -85,10 +77,6 @@ interface OrcaService {
   Map getPipeline(@Path("id") String id)
 
   @Headers("Accept: application/json")
-  @GET("/pipelines/{id}/logs")
-  List<Map> getPipelineLogs(@Path("id") String id)
-
-  @Headers("Accept: application/json")
   @PUT("/pipelines/{id}/cancel")
   Map cancelPipeline(@Path("id") String id, @Query("reason") reason, @Query("force") force, @Body String ignored)
 
@@ -121,6 +109,14 @@ interface OrcaService {
   Map evaluateExpressionForExecution(@Path("id") String executionId, @Query("expression") String pipelineExpression)
 
   @Headers("Accept: application/json")
+  @GET("/pipelines/{id}/{stageId}/evaluateExpression")
+  Map evaluateExpressionForExecutionAtStage(@Path("id") String executionId, @Path("stageId") String stageId, @Query("expression") String pipelineExpression)
+
+  @Headers("Accept: application/json")
+  @POST("/pipelines/{id}/evaluateVariables")
+  Map evaluateVariables(@Path("id") String id, @Query("requisiteStageRefIds") String requisiteStageRefIds, @Query("spelVersion") String spelVersionOverride, @Body List<Map<String, String>> expressions)
+
+  @Headers("Accept: application/json")
   @GET("/webhooks/preconfigured")
   List preconfiguredWebhooks()
 
@@ -141,4 +137,10 @@ interface OrcaService {
 
   @POST("/concourse/stage/start")
   Response concourseStageExecution(@Query("stageId") String stageId, @Query("job") String job, @Query("buildNumber") Integer buildNumber, @Body String emptyBody);
+
+  @GET("/capabilities/deploymentMonitors")
+  List<Object> getDeploymentMonitors();
+
+  @GET("/capabilities/expressions")
+  Map getExpressionCapabilities();
 }

@@ -97,23 +97,23 @@ class SamlSsoConfig extends WebSecurityConfigurerAdapter {
      */
     @PostConstruct
     void validate() {
-      def keyStoreToValidate = keyStore
-      if (!keyStoreToValidate) {
-        return
+      if (metadataUrl && metadataUrl.startsWith("/")) {
+        metadataUrl = "file:" + metadataUrl
       }
 
-      if (!keyStoreToValidate.startsWith("file:")) {
-        keyStoreToValidate = "file:" + keyStoreToValidate
-      }
+      if (keyStore) {
+        if (!keyStore.startsWith("file:")) {
+          keyStore = "file:" + keyStore
+        }
+        new File(new URI(keyStore)).withInputStream { is ->
+          def keystore = KeyStore.getInstance(KeyStore.getDefaultType())
 
-      new File(new URI(keyStoreToValidate)).withInputStream { is ->
-        def keystore = KeyStore.getInstance(KeyStore.getDefaultType())
+          // will throw an exception if `keyStorePassword` is invalid
+          keystore.load(is, keyStorePassword.toCharArray())
 
-        // will throw an exception if `keyStorePassword` is invalid
-        keystore.load(is, keyStorePassword.toCharArray());
-
-        if (keyStoreAliasName && !keystore.aliases().find { it.equalsIgnoreCase(keyStoreAliasName) }) {
-          throw new IllegalStateException("Keystore '${keyStore}' does not contain alias '${keyStoreAliasName}'")
+          if (keyStoreAliasName && !keystore.aliases().find { it.equalsIgnoreCase(keyStoreAliasName) }) {
+            throw new IllegalStateException("Keystore '${keyStore}' does not contain alias '${keyStoreAliasName}'")
+          }
         }
       }
     }
@@ -125,6 +125,7 @@ class SamlSsoConfig extends WebSecurityConfigurerAdapter {
     String roles = "memberOf"
     String rolesDelimiter = ";"
     String username
+    String email
   }
 
   @Autowired
@@ -212,8 +213,9 @@ class SamlSsoConfig extends WebSecurityConfigurerAdapter {
         def attributes = extractAttributes(assertion)
         def userAttributeMapping = samlSecurityConfigProperties.userAttributeMapping
 
-        def email = assertion.getSubject().nameID.value
-        String username = attributes[userAttributeMapping.username]?.get(0) ?: email
+        def subjectNameId = assertion.getSubject().nameID.value
+        def email = attributes[userAttributeMapping.email]?.get(0) ?: subjectNameId
+        String username = attributes[userAttributeMapping.username]?.get(0) ?: subjectNameId
         def roles = extractRoles(email, attributes, userAttributeMapping)
 
         if (samlSecurityConfigProperties.requiredRoles) {

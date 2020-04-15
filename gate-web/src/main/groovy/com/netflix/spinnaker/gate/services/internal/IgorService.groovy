@@ -18,6 +18,7 @@
 
 package com.netflix.spinnaker.gate.services.internal
 
+
 import retrofit.http.EncodedPath
 import retrofit.http.GET
 import retrofit.http.Path
@@ -55,6 +56,9 @@ interface IgorService {
   @GET('/artifactory/names')
   List<String> getArtifactoryNames()
 
+  @GET('/nexus/names')
+  List<String> getNexusNames()
+
   @GET('/concourse/{buildMaster}/teams')
   List<String> getConcourseTeams(@Path("buildMaster") String buildMaster)
 
@@ -67,11 +71,30 @@ interface IgorService {
   @GET('/gcb/accounts')
   List<String> getGoogleCloudBuildAccounts();
 
+  @GET('/gcb/triggers/{account}')
+  List<GoogleCloudBuildTrigger> getGoogleCloudBuildTriggers(@Path("account") String account);
+
+  @GET('/codebuild/accounts')
+  List<String> getAwsCodeBuildAccounts();
+
+  @GET('/codebuild/projects/{account}')
+  List<String> getAwsCodeBuildProjects(@Path("account") String account);
+
   @GET('/artifacts/{provider}/{packageName}')
   List<String> getArtifactVersions(@Path("provider") String provider,
                                    @Path("packageName") String packageName,
                                    @Query("releaseStatus") String releaseStatus);
 
+  @GET('/artifacts/{provider}/{packageName}/{version}')
+  Map<String, Object> getArtifactByVersion(@Path("provider") String provider,
+                                           @Path("packageName") String packageName,
+                                           @Path("version") String version);
+
   @GET('/concourse/{buildMaster}/teams/{team}/pipelines/{pipeline}/resources')
   List<String> getConcourseResources(@Path("buildMaster") String buildMaster, @Path("team") String team, @Path("pipeline") String pipeline);
+
+  @GET('/ci/builds')
+  List<String> getBuilds(@Query("projectKey") String projectKey,
+                         @Query("repoSlug") String repoSlug,
+                         @Query("completionStatus") String completionStatus)
 }

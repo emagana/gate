@@ -16,6 +16,7 @@
 
 package com.netflix.spinnaker.gate.services
 
+
 import com.netflix.spinnaker.fiat.model.UserPermission
 import com.netflix.spinnaker.fiat.model.resources.Role
 import com.netflix.spinnaker.fiat.shared.FiatPermissionEvaluator
@@ -23,12 +24,22 @@ import com.netflix.spinnaker.fiat.shared.FiatService
 import com.netflix.spinnaker.fiat.shared.FiatStatus
 import com.netflix.spinnaker.gate.security.SpinnakerUser
 import com.netflix.spinnaker.gate.services.commands.HystrixFactory
+import com.netflix.spinnaker.gate.services.internal.ExtendedFiatService
+import com.netflix.spinnaker.kork.core.RetrySupport
+import com.netflix.spinnaker.kork.exceptions.SpinnakerException
+import com.netflix.spinnaker.kork.exceptions.SystemException
 import com.netflix.spinnaker.security.AuthenticatedRequest
 import com.netflix.spinnaker.security.User
+import groovy.transform.PackageScope
 import groovy.util.logging.Slf4j
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import retrofit.RetrofitError
+
+import javax.annotation.Nonnull
+import java.time.Duration
 
 import static com.netflix.spinnaker.gate.retrofit.UpstreamBadRequest.classifyError
 
@@ -42,6 +53,16 @@ class PermissionService {
   FiatService fiatService
 
   @Autowired
+  ExtendedFiatService extendedFiatService
+
+  @Autowired
+  ServiceAccountFilterConfigProps serviceAccountFilterConfigProps
+
+  @Autowired
+  @Qualifier("fiatLoginService")
+  Optional<FiatService> fiatLoginService
+
+  @Autowired
   FiatPermissionEvaluator permissionEvaluator
 
   @Autowired
@@ -51,12 +72,16 @@ class PermissionService {
     return fiatStatus.isEnabled()
   }
 
+  private FiatService getFiatServiceForLogin() {
+    return fiatLoginService.orElse(fiatService);
+  }
+
   void login(String userId) {
     if (fiatStatus.isEnabled()) {
       HystrixFactory.newVoidCommand(HYSTRIX_GROUP, "login") {
         try {
           AuthenticatedRequest.allowAnonymous({
-            fiatService.loginUser(userId, "")
+            fiatServiceForLogin.loginUser(userId, "")
             permissionEvaluator.invalidatePermission(userId)
           })
         } catch (RetrofitError e) {
@@ -71,7 +96,7 @@ class PermissionService {
       HystrixFactory.newVoidCommand(HYSTRIX_GROUP, "loginWithRoles") {
         try {
           AuthenticatedRequest.allowAnonymous({
-            fiatService.loginWithRoles(userId, roles)
+            fiatServiceForLogin.loginWithRoles(userId, roles)
             permissionEvaluator.invalidatePermission(userId)
           })
         } catch (RetrofitError e) {
@@ -85,7 +110,7 @@ class PermissionService {
     if (fiatStatus.isEnabled()) {
       HystrixFactory.newVoidCommand(HYSTRIX_GROUP, "logout") {
         try {
-          fiatService.logoutUser(userId)
+          fiatServiceForLogin.logoutUser(userId)
           permissionEvaluator.invalidatePermission(userId)
         } catch (RetrofitError e) {
           throw classifyError(e)
@@ -98,7 +123,7 @@ class PermissionService {
     if (fiatStatus.isEnabled()) {
       HystrixFactory.newVoidCommand(HYSTRIX_GROUP, "sync") {
         try {
-          fiatService.sync(Collections.emptyList())
+          fiatServiceForLogin.sync(Collections.emptyList())
         } catch (RetrofitError e) {
           throw classifyError(e)
         }
@@ -117,6 +142,50 @@ class PermissionService {
         throw classifyError(e)
       }
     }.execute() as Set<Role>
+  }
+
+  //VisibleForTesting
+  @PackageScope List<UserPermission.View> lookupServiceAccounts(String userId) {
+    try {
+      return extendedFiatService.getUserServiceAccounts(userId)
+    } catch (RetrofitError re) {
+      boolean notFound = re.response?.status == HttpStatus.NOT_FOUND.value()
+      if (notFound) {
+        return []
+      }
+      boolean shouldRetry = re.response == null || HttpStatus.valueOf(re.response.status).is5xxServerError()
+      throw new SystemException("getUserServiceAccounts failed", re).setRetryable(shouldRetry)
+    }
+  }
+
+  List<String> getServiceAccountsForApplication(@SpinnakerUser User user, @Nonnull String application) {
+    if (!serviceAccountFilterConfigProps.enabled ||
+        !user ||
+        !application ||
+        !fiatStatus.enabled ||
+        serviceAccountFilterConfigProps.matchAuthorizations.isEmpty()) {
+      return getServiceAccounts(user);
+    }
+
+    List<String> filteredServiceAccounts
+    RetrySupport retry = new RetrySupport()
+    try {
+      List<UserPermission.View> serviceAccounts = retry.retry({ lookupServiceAccounts(user.username) }, 3, Duration.ofMillis(50), false)
+
+      filteredServiceAccounts = serviceAccounts.findResults {
+        if (it.applications.find { it.name.equalsIgnoreCase(application) && it.authorizations.find { serviceAccountFilterConfigProps.matchAuthorizations.contains(it) } }) {
+          return it.name
+        }
+        return null
+      }
+    } catch (SpinnakerException se) {
+      log.error("failed to lookup user {} service accounts for application {}, falling back to all user service accounts", user, application, se)
+      return getServiceAccounts(user)
+    }
+
+    // if there are no service accounts for the requested application, fall back to the full list of service accounts for the user
+    //  to avoid a chicken and egg problem of trying to enable security for the first time on an application
+    return filteredServiceAccounts ?: getServiceAccounts(user)
   }
 
   List<String> getServiceAccounts(@SpinnakerUser User user) {
